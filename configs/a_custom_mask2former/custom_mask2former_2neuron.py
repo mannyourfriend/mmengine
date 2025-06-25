@@ -305,7 +305,7 @@ default_hooks = dict(
 		by_epoch=True,
 		save_last=True,
 		max_keep_ckpts=20,
-		interval=interval,
+		interval=1,
 		save_best='coco/segm_mAP_50'),
 	#param_scheduler=dict(type='ParamSchedulerHook'),  # For learning rate updates
 # timer=dict(type='IterTimerHook'),  # Track iteration time
