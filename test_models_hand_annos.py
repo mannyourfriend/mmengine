@@ -15,23 +15,25 @@ from mmdet.apis import init_detector, inference_detector
 
 # --------------------------------------------------
 # Path to config file and checkpoint file
-CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former\20250603_123001\vis_data\config.py"
-CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former\20250603_123001\vis_data\best_coco_segm_mAP_50_iter_550000.pth"
-JSON_GT         = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\HandAnnotations_inprogress\handAnnos\annotations\instances_default - Copy.json"    # path to the uploaded file
+CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\20250626_164241\vis_data\config.py"
+CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\best_coco_segm_mAP_50_epoch_18.pth"
+JSON_GT         = r"C:\Users\five\Desktop\Manny\05a11_10neuron\ValReal_YodaCrunch.json"    # path to the uploaded file
 filename = os.path.basename(CHECKPOINT_FILE)
 save_dir = os.path.dirname(CONFIG_FILE)
 match = re.search(r"iter_\d+", filename)
-if match:
-	iteration = match.group()
+if not match:
+	match = re.search(r"epoch_\d+", filename)
+iteration = match.group()
+	
 output_dir = os.path.join(save_dir, fr"results_cp_{iteration}")
 # Ensure output directory exists
 os.makedirs(output_dir, exist_ok=True)
 
 OUT_JSON        = os.path.join(output_dir, "coco_results.json")
-ROTATION_ANGLES_COUNT = 20   # feel free to trim
-MASK_SCORE_THR  = 0.01   # matches your visualizer
-FUSE_IOU_THR    = 0.15
-MIN_SUPPORT     = 12
+ROTATION_ANGLES_COUNT = 4   # feel free to trim
+MASK_SCORE_THR  = 0.2   # matches your visualizer
+FUSE_IOU_THR    = 0.2
+MIN_SUPPORT     = 2
 DEVICE          = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
@@ -47,15 +49,15 @@ print(coco_name2id)
 model2coco = {i: coco_name2id.get(name)
 			for i, name in enumerate(model_classes)}
 
-missing = [i for i, cid in model2coco.items() if cid is None]
-if missing:
-	raise RuntimeError(f"Model labels {missing} not found in COCO categories.")
-coco_dt = coco_gt.loadRes(OUT_JSON)
+# missing = [i for i, cid in model2coco.items() if cid is None]
+# if missing:
+# 	raise RuntimeError(f"Model labels {missing} not found in COCO categories.")
+# coco_dt = coco_gt.loadRes(OUT_JSON)
 
-print("  ↳ GT  images :", len(coco_gt.getImgIds()))
-print("  ↳ Pred images:", len(coco_dt.getImgIds()))
-print("  ↳ GT  cats   :", coco_gt.getCatIds())
-print("  ↳ Pred cats  :", coco_dt.getCatIds())
+# print("  ↳ GT  images :", len(coco_gt.getImgIds()))
+# print("  ↳ Pred images:", len(coco_dt.getImgIds()))
+# print("  ↳ GT  cats   :", coco_gt.getCatIds())
+# print("  ↳ Pred cats  :", coco_dt.getCatIds())
 
 def coco_rle_from_binary(mask_bool):
 	"""binary H×W → compressed RLE dict that COCO expects."""

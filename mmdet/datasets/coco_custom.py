@@ -16,7 +16,7 @@ class COCOCustomDataset(BaseDetDataset):
 	"""Custom COCO Dataset for MMSegmentation."""
 
 	METAINFO = {
-		'classes': ['background', 'NeuriteSoma', 'OutOfBound', 'Soma'],
+		'classes': ['NeuriteSoma', 'OutOfBound', 'Soma'],
 		'palette': [
 		[0, 0, 0],        # background - black
 		[128, 0, 0],      # NeuriteSoma - dark red
@@ -49,7 +49,7 @@ class COCOCustomDataset(BaseDetDataset):
 			
 		# Get category IDs that match your class names
 		self.cat_ids = self.coco.get_cat_ids(
-			cat_names=self.metainfo['classes'][1:])  # Skip background class
+			cat_names=self.metainfo['classes'])  # Skip background class
 		self.cat2label = {cat_id: i for i, cat_id in enumerate(self.cat_ids)}
 		self.cat_img_map = copy.deepcopy(self.coco.cat_img_map)
 

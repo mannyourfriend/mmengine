@@ -15,21 +15,25 @@ from datetime import datetime
 import json
 
 # Path to config file and checkpoint file
-config_file = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former\20250603_123001\vis_data\config.py"
-checkpoint_file = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former\20250603_123001\vis_data\best_coco_segm_mAP_50_iter_550000.pth"
-ROTATION_ANGLES_COUNT = 20   # feel free to trim
-MASK_SCORE_THR  = 0.01
-FUSE_IOU_THR    = 0.15
-MIN_SUPPORT     = 12
-filename = os.path.basename(checkpoint_file)
+CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\20250626_164241\vis_data\config.py"
+CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\best_coco_segm_mAP_50_epoch_18.pth"# ROTATION_ANGLES_COUNT = 20   # feel free to trim
+# MASK_SCORE_THR  = 0.01
+# FUSE_IOU_THR    = 0.15
+# MIN_SUPPORT     = 12
+ROTATION_ANGLES_COUNT = 4   # feel free to trim
+MASK_SCORE_THR  = 0.2   # matches your visualizer
+FUSE_IOU_THR    = 0.2
+MIN_SUPPORT     = 2
+filename = os.path.basename(CHECKPOINT_FILE)
 
 # Search for iter number
 match = re.search(r"iter_\d+", filename)
-if match:
-	iteration = match.group()
+if not match:
+	match = re.search(r"epoch_\d+", filename)
+iteration = match.group()
 # Initialize the model
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-model = init_detector(config_file, checkpoint_file, device=device)
+model = init_detector(CONFIG_FILE, CHECKPOINT_FILE, device=device)
 
 # Path to the input image
 img_path = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\FIV906_neurons\quartered\t1_B05_s4_w1_z1_bottom_left.bmp"
@@ -38,7 +42,7 @@ img_path2 = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\Kao_Allison\Vacor-1a_exp\o
 # Get parent directory and output directory
 parent_dir = os.path.dirname(img_path)
 parent_dir2 = os.path.dirname(img_path2)
-save_dir = os.path.dirname(config_file)
+save_dir = os.path.dirname(CONFIG_FILE)
 output_dir = os.path.join(save_dir, fr"results_cp_{iteration}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
 categories = {0: "NeuriteSoma", 1: "OutOfBound", 2: "Soma", 3: "Cluster"}
@@ -209,16 +213,16 @@ def iou(p1: Polygon, p2: Polygon):
 	inter = p1.intersection(p2).area
 	return inter / p1.union(p2).area if inter > 0 else 0.0
 
-coco_gt = COCO()           # empty constructor
-coco_gt.dataset = coco_dict
-coco_gt.createIndex()
+# coco_gt = COCO()           # empty constructor
+# coco_gt.dataset = coco_dict
+# coco_gt.createIndex()
 
-model_classes   = list(model.dataset_meta['classes'])   # e.g. ['axon', 'dendrite']
-coco_name2id    = {cat['name']: cat['id']
-                   for cat in coco_gt.loadCats(coco_gt.getCatIds())}
+# model_classes   = list(model.dataset_meta['classes'])   # e.g. ['axon', 'dendrite']
+# coco_name2id    = {cat['name']: cat['id']
+#                    for cat in coco_gt.loadCats(coco_gt.getCatIds())}
 
-model2coco = {i: coco_name2id.get(name)
-              for i, name in enumerate(model_classes)}
+# model2coco = {i: coco_name2id.get(name)
+#               for i, name in enumerate(model_classes)}
 
 for image_file in image_files:
 	img_full_path = os.path.join(parent_dir, image_file)
@@ -357,8 +361,8 @@ for image_file in image_files2:
 
 run_cfg = dict(
 	timestamp      = datetime.now().strftime("%Y%m%d_%H%M%S"),
-	config_file    = config_file,
-	checkpoint_file= checkpoint_file,
+	config_file    = CONFIG_FILE,
+	checkpoint_file= CHECKPOINT_FILE,
 	rotation_count = ROTATION_ANGLES_COUNT,
 	rotation_angles= rotation_angles(ROTATION_ANGLES_COUNT),  # ← uses helper
 	mask_score_thr = MASK_SCORE_THR,
