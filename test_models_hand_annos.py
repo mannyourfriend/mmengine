@@ -4,6 +4,10 @@ from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as mask_utils
 from tqdm import tqdm
 import cv2
+import matplotlib.pyplot as plt
+import socket
+from datetime import datetime
+import shapely
 
 # your existing helpers ----------------------------
 from rotation_utils import rotate_image, derotate_mask, polygons_from_mask
@@ -15,27 +19,48 @@ from mmdet.apis import init_detector, inference_detector
 
 # --------------------------------------------------
 # Path to config file and checkpoint file
-CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\20250626_164241\vis_data\config.py"
-CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\best_coco_segm_mAP_50_epoch_18.pth"
-JSON_GT         = r"C:\Users\five\Desktop\Manny\05a11_10neuron\ValReal_YodaCrunch.json"    # path to the uploaded file
+CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron_crowdClusterAndSoma_expand2_run2\custom_mask2former_10neuron_crowdClusterAndSoma_expand2.py"
+CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron_crowdClusterAndSoma_expand2_run2\best_coco_segm_mAP_50_epoch_19.pth"
+# JSON_GT         = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\HandAnnotations_inprogress\handAnnos\annotations\instances_default_NoClusters_CrowdSoma.json"   # path to the uploaded file
+JSON_GT = r"C:\Users\five\Desktop\Manny\05a11_10neuron_crowdClusterAndSoma\coco_val.json"
 filename = os.path.basename(CHECKPOINT_FILE)
-save_dir = os.path.dirname(CONFIG_FILE)
+save_dir = os.path.join(os.path.dirname(CONFIG_FILE), "test_model_hand_annos")
 match = re.search(r"iter_\d+", filename)
 if not match:
 	match = re.search(r"epoch_\d+", filename)
 iteration = match.group()
-	
-output_dir = os.path.join(save_dir, fr"results_cp_{iteration}")
+timeID = datetime.now().strftime("%Y%m%d%H%M%S")
+
+output_dir = os.path.join(save_dir, fr"results_cp_{iteration}_ID_{timeID}")
 # Ensure output directory exists
 os.makedirs(output_dir, exist_ok=True)
 
 OUT_JSON        = os.path.join(output_dir, "coco_results.json")
-ROTATION_ANGLES_COUNT = 4   # feel free to trim
-MASK_SCORE_THR  = 0.2   # matches your visualizer
-FUSE_IOU_THR    = 0.2
-MIN_SUPPORT     = 2
+ROTATION_ANGLES_COUNT = 1  # feel free to trim
+MASK_SCORE_THR  = 0.5   # matches your visualizer
+FUSE_IOU_THR    = 0.4
+MIN_SUPPORT     = 1
+# ROTATION_ANGLES_COUNT = 1   # feel free to trim
+# MASK_SCORE_THR  = 0.1  # matches your visualizer
+# FUSE_IOU_THR    = 0.2
+# MIN_SUPPORT     = int(ROTATION_ANGLES_COUNT * 0.4)
 DEVICE          = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+metadata = {
+	"outputFile": OUT_JSON,
+	"numRotations": ROTATION_ANGLES_COUNT,
+	"maskScoreThreshold": MASK_SCORE_THR,
+	"IOU_FusionThreshold": FUSE_IOU_THR,
+	"minimumMatchingObjs": MIN_SUPPORT,
+	"onGPU": DEVICE=='cuda',
+	"computerName": socket.gethostname(),
+	"modelPath": CHECKPOINT_FILE,
+	"labelPath": JSON_GT,
+	"timeID": timeID
+}
+metadataFile = os.path.join(output_dir, f"metadata_ID_{timeID}.json")
+with open(metadataFile, 'w', encoding='utf-8') as fh:
+	json.dump(metadata, fh, indent=2)
 
 # Initialize the model
 model = init_detector(CONFIG_FILE, CHECKPOINT_FILE, device=DEVICE)
@@ -86,7 +111,24 @@ def predict_image_coco(img_info):
 				back = derotate_mask(m.numpy(), invM, (w, h))
 				for poly in polygons_from_mask(back):
 					collected.append((ang, poly, float(s), int(lab)))
+	results = []
+	for _, poly, score, lab in collected:
+		coco_cat = model2coco.get(lab)
+		if coco_cat is None:
+			continue                     # no matching category in GT
 
+		mask = np.zeros((h, w), dtype=np.uint8)
+		cv2.fillPoly(mask, [np.array(list(poly.exterior.coords)).astype(int)], 1)
+		rle = coco_rle_from_binary(mask)
+
+		results.append(dict(
+			image_id   = img_info['id'],
+			category_id= coco_cat,
+			score      = score,
+			segmentation = rle,             # for segm AP
+			bbox         = list(mask_utils.toBbox(rle)),  # for bbox AP
+		))
+	return results
 	# 2) fuse
 	fused = []   # [(Poly, score, label, support_set)]
 	for ang, poly, score, lab in collected:

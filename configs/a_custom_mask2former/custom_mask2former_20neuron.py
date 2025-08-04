@@ -304,7 +304,7 @@ default_hooks = dict(
 		type='CheckpointHook',
 		by_epoch=True,
 		save_last=True,
-		max_keep_ckpts=20,
+		max_keep_ckpts=5,
 		interval=1,
 		save_best='coco/segm_mAP_50'),
 	#param_scheduler=dict(type='ParamSchedulerHook'),  # For learning rate updates

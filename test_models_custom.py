@@ -15,15 +15,20 @@ from datetime import datetime
 import json
 
 # Path to config file and checkpoint file
-CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\20250626_164241\vis_data\config.py"
-CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron\best_coco_segm_mAP_50_epoch_18.pth"# ROTATION_ANGLES_COUNT = 20   # feel free to trim
+CONFIG_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron_crowdClusterAndSoma_expand2_run1\custom_mask2former_10neuron_crowdClusterAndSoma_expand2.py"
+CHECKPOINT_FILE = r"C:\Users\five\Desktop\Manny\AI_only\mmdetection\work_dirs\custom_mask2former_10neuron_crowdClusterAndSoma_expand2_run1\best_coco_segm_mAP_50_epoch_15.pth"
+# ROTATION_ANGLES_COUNT = 20   # feel free to trim
 # MASK_SCORE_THR  = 0.01
 # FUSE_IOU_THR    = 0.15
 # MIN_SUPPORT     = 12
-ROTATION_ANGLES_COUNT = 4   # feel free to trim
+# ROTATION_ANGLES_COUNT = 20   # feel free to trim
+# MASK_SCORE_THR  = 0.2   # matches your visualizer
+# FUSE_IOU_THR    = 0.2
+# MIN_SUPPORT     = 12
+ROTATION_ANGLES_COUNT = 4  # feel free to trim
 MASK_SCORE_THR  = 0.2   # matches your visualizer
-FUSE_IOU_THR    = 0.2
-MIN_SUPPORT     = 2
+FUSE_IOU_THR    = 0.1
+MIN_SUPPORT     = 1
 filename = os.path.basename(CHECKPOINT_FILE)
 
 # Search for iter number
@@ -36,12 +41,12 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model = init_detector(CONFIG_FILE, CHECKPOINT_FILE, device=device)
 
 # Path to the input image
-img_path = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\FIV906_neurons\quartered\t1_B05_s4_w1_z1_bottom_left.bmp"
-img_path2 = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\Kao_Allison\Vacor-1a_exp\other_ex_images_1a - bmps\crops_512\4h_A - 3(fld 1 wv 405 - Orange)_bl.bmp"
-
+# img_path = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\FIV906_neurons\rotate_img\rot72deg.bmp"
+# img_path2 = r"S:\Phys\FIV906 NeuroArbors\Real_Neurons\Kao_Allison\Vacor-1a_exp\other_ex_images_1a - bmps\crops_512\4h_A - 3(fld 1 wv 405 - Orange)_bl.bmp"
+img_path = r"C:\Users\five\Desktop\Manny\05a11_10neuron_crowdClusterAndSoma\subset_test_images\000315.tif"
 # Get parent directory and output directory
 parent_dir = os.path.dirname(img_path)
-parent_dir2 = os.path.dirname(img_path2)
+# parent_dir2 = os.path.dirname(img_path2)
 save_dir = os.path.dirname(CONFIG_FILE)
 output_dir = os.path.join(save_dir, fr"results_cp_{iteration}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
@@ -52,54 +57,74 @@ os.makedirs(output_dir, exist_ok=True)
 # Get list of all images in the parent directory
 image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".tif"}
 image_files = [f for f in os.listdir(parent_dir) if os.path.splitext(f)[1].lower() in image_extensions]
-image_files2 = [f for f in os.listdir(parent_dir2) if os.path.splitext(f)[1].lower() in image_extensions]
+# image_files2 = [f for f in os.listdir(parent_dir2) if os.path.splitext(f)[1].lower() in image_extensions]
 def rotation_angles(num_angles: int):
-    """
-    Return a list of evenly spaced rotation angles that cover 360°.
+	"""
+	Return a list of evenly spaced rotation angles that cover 360°.
 
-    Examples
-    --------
-    >>> rotation_angles(4)
-    [0, 90, 180, 270]
+	Examples
+	--------
+	>>> rotation_angles(4)
+	[0, 90, 180, 270]
 
-    >>> rotation_angles(6)
-    [0, 60, 120, 180, 240, 300]
-    """
-    if num_angles < 1:
-        raise ValueError("num_angles must be ≥ 1")
+	>>> rotation_angles(6)
+	[0, 60, 120, 180, 240, 300]
+	"""
+	if num_angles < 1:
+		raise ValueError("num_angles must be ≥ 1")
 
-    step = 360.0 / num_angles
-    # round() makes 0, 90, 180, … exactly ints for common divisors of 360
-    return [round(i * step, 6) for i in range(num_angles)]
+	step = 360.0 / num_angles
+	# round() makes 0, 90, 180, … exactly ints for common divisors of 360
+	return [round(i * step, 6) for i in range(num_angles)]
 
-def sample_from_fused(fused_polys, img_h, img_w):
-    """
-    fused_polys: list[(Polygon, score, label)]
-    Returns a DetDataSample ready for DetLocalVisualizer.
-    """
-    if not fused_polys:
-        return DetDataSample()        # empty sample → visualizer shows raw img
+def filter_small_objects(fused_polys, min_area=50):
+	"""
+	Filters out polygons from fused_polys with area < min_area.
 
-    # 1. build dense masks  -------------------------------
-    masks = []
-    for poly, _, _, _ in fused_polys:
-        mask = np.zeros((img_h, img_w), dtype=np.uint8)
-        pts = np.array(list(poly.exterior.coords)).astype(int)
-        cv2.fillPoly(mask, [pts], 1)          # fill = 1
-        masks.append(mask)
-    masks = np.stack(masks)                   # (N, H, W) uint8
+	Parameters:
+	- fused_polys: list of (Polygon, score, label, support_set) or (Polygon, score, label)
+	- min_area: minimum area threshold in pixels
 
-    # 2. pack into InstanceData ---------------------------
-    inst = InstanceData()
-    inst.masks  = torch.from_numpy(masks) > 0        # bool tensor
-    inst.scores = torch.tensor([s for _, s, _, _ in fused_polys])
-    inst.labels = torch.tensor([l for _, _, l, _ in fused_polys])
+	Returns:
+	- list of filtered (Polygon, score, label, ...)
+	"""
+	filtered = []
+	for entry in fused_polys:
+		poly = entry[0]
+		if poly.area >= min_area:
+			filtered.append(entry)
+	return filtered
 
-    # optional bboxes (visualizer uses them for score text placement)
-    inst.bboxes = masks_to_boxes(inst.masks.float())
+def sample_from_fused(fused_polys, img_h, img_w, size_filter = 0):
+	"""
+	fused_polys: list[(Polygon, score, label)]
+	Returns a DetDataSample ready for DetLocalVisualizer.
+	"""
+	if not fused_polys:
+		return DetDataSample()        # empty sample → visualizer shows raw img
 
-    # 3. wrap in DetDataSample ----------------------------
-    return DetDataSample(pred_instances=inst)
+	if size_filter > 0:
+		fused_polys = filter_small_objects(fused_polys, size_filter) 
+	# 1. build dense masks  -------------------------------
+	masks = []
+	for poly, _, _, _ in fused_polys:
+		mask = np.zeros((img_h, img_w), dtype=np.uint8)
+		pts = np.array(list(poly.exterior.coords)).astype(int)
+		cv2.fillPoly(mask, [pts], 1)          # fill = 1
+		masks.append(mask)
+	masks = np.stack(masks)                   # (N, H, W) uint8
+
+	# 2. pack into InstanceData ---------------------------
+	inst = InstanceData()
+	inst.masks  = torch.from_numpy(masks) > 0        # bool tensor
+	inst.scores = torch.tensor([s for _, s, _, _ in fused_polys])
+	inst.labels = torch.tensor([l for _, _, l, _ in fused_polys])
+
+	# optional bboxes (visualizer uses them for score text placement)
+	inst.bboxes = masks_to_boxes(inst.masks.float())
+
+	# 3. wrap in DetDataSample ----------------------------
+	return DetDataSample(pred_instances=inst)
 
 def bitmap_to_polygon(bitmap):
 	"""Convert masks from the form of bitmaps to polygons.
@@ -146,36 +171,36 @@ def derotate_mask(mask: np.ndarray, invM, out_shape):
 						flags=cv2.INTER_NEAREST).astype(bool)
 
 class FilledMaskVisualizer(DetLocalVisualizer):
-    """Draw masks as filled, semi-transparent blobs instead of just edges."""
+	"""Draw masks as filled, semi-transparent blobs instead of just edges."""
 
-    def _draw_instances(self,
-                        image,
-                        instances,
-                        classes=None,
-                        palette=None,
-                        **kwargs):
-        # Call parent to draw boxes / labels first (they'll go on top later)
-        img = super()._draw_instances(
-            image, instances, classes, palette, show_mask=False, **kwargs)
+	def _draw_instances(self,
+						image,
+						instances,
+						classes=None,
+						palette=None,
+						**kwargs):
+		# Call parent to draw boxes / labels first (they'll go on top later)
+		img = super()._draw_instances(
+			image, instances, classes, palette, show_mask=False, **kwargs)
 
-        if not hasattr(instances, 'masks') or instances.masks.numel() == 0:
-            return img
+		if not hasattr(instances, 'masks') or instances.masks.numel() == 0:
+			return img
 
-        masks  = instances.masks.cpu().numpy()
-        colors = self._get_palette(palette, len(masks))
+		masks  = instances.masks.cpu().numpy()
+		colors = self._get_palette(palette, len(masks))
 
-        for i, mask in enumerate(masks):
-            contours, _ = bitmap_to_polygon(mask)
-            # <── key difference: pass face_colors
-            img = self.draw_polygons(
-                contours,
-                edge_colors=colors[i],      # outline
-                face_colors=colors[i],      # fill
-                alpha=0.4,                  # 0 = transparent, 1 = opaque
-                line_width=self.line_width,
-                canvas=img)
+		for i, mask in enumerate(masks):
+			contours, _ = bitmap_to_polygon(mask)
+			# <── key difference: pass face_colors
+			img = self.draw_polygons(
+				contours,
+				edge_colors=colors[i],      # outline
+				face_colors=colors[i],      # fill
+				alpha=0.4,                  # 0 = transparent, 1 = opaque
+				line_width=self.line_width,
+				canvas=img)
 
-        return img
+		return img
 
 # ---------- polygon helpers --------------------------------------------------
 def polygons_from_mask(mask_bool: np.ndarray):
@@ -249,16 +274,37 @@ for image_file in image_files:
 						inst.scores,
 						inst.labels):
 			mask_back = derotate_mask(m.numpy(), invM, (w, h))
-			for poly in polygons_from_mask(mask_back):
-				collected.append((ang, poly, float(s), int(l)))
+			# for poly in polygons_from_mask(mask_back):
+			# 	collected.append((ang, poly, float(s), int(l)))
+			new_polys = polygons_from_mask(mask_back)
+			for poly in new_polys:
+				merged = False
+				for i, (a, p, score, label) in enumerate(collected):
+					if not (label == int(l)) and not ({label, int(l)} == {0, 1}):
+						print("skipped Label = ", label, " and int(l) = ", int(l))
+						continue
+					if iou(poly, p) >= FUSE_IOU_THR:
+						# Merge with existing polygon
+						merged_poly = p.union(poly)
+						collected[i] = (
+							a,                      # Keep the original rotation angle
+							merged_poly,            # Updated polygon
+							max(score, float(s)),   # Max score
+							label                   # Same label
+						)
+						merged = True
+						break
+				if not merged:
+					collected.append((ang, poly, float(s), int(l)))
 
 	# ── 2) Fuse polygons across rotations by IoU ----------------------------
 	fused = []   # [(Polygon, best_score, label, support_set)]
 	for rot_id, poly, scr, lab in collected:
 		merged = False
 		for i, (fp, fs, fl, support) in enumerate(fused):
-			if lab != fl:
-				continue
+			# if not (label == int(l) or {label, int(l)} == {0, 1}):
+			# 	print("skipped Label = ", label, " and int(l) = ", int(l))
+			# 	continue
 			if iou(poly, fp) >= FUSE_IOU_THR:
 				new_poly   = fp.union(poly)
 				new_score  = max(fs, scr)
@@ -271,7 +317,7 @@ for image_file in image_files:
 	fused = [t for t in fused if len(t[3]) >= MIN_SUPPORT]
 
 	# ── 3) Build an MMDet sample & pretty overlay ---------------------------
-	fused_sample = sample_from_fused(fused, h, w)
+	fused_sample = sample_from_fused(fused, h, w, size_filter = 100)
 	visualizer = DetLocalVisualizer(alpha=0.3, line_width=0.3)
 	visualizer.dataset_meta = model.dataset_meta
 	# visualizer = FilledMaskVisualizer(
@@ -292,72 +338,72 @@ for image_file in image_files:
 	print("Saved overlay →", os.path.join(output_dir, f"rotFuse_{image_file}"))
 
 	
-for image_file in image_files2:
-	img_full_path = os.path.join(parent_dir2, image_file)
-	img_orig      = mmcv.imread(img_full_path)
-	h, w          = img_orig.shape[:2]
+# for image_file in image_files2:
+# 	img_full_path = os.path.join(parent_dir2, image_file)
+# 	img_orig      = mmcv.imread(img_full_path)
+# 	h, w          = img_orig.shape[:2]
 
-	# ── 1) run model on each rotation & collect derotated polygons ─────────
-	collected = []                                     # [(Polygon, score, label)]
-	for ang in rotation_angles(ROTATION_ANGLES_COUNT):
-		rot_img, M, invM = rotate_image(img_orig, ang)
-		det_sample = inference_detector(model, rot_img).cpu()
+# 	# ── 1) run model on each rotation & collect derotated polygons ─────────
+# 	collected = []                                     # [(Polygon, score, label)]
+# 	for ang in rotation_angles(ROTATION_ANGLES_COUNT):
+# 		rot_img, M, invM = rotate_image(img_orig, ang)
+# 		det_sample = inference_detector(model, rot_img).cpu()
 
-		if not hasattr(det_sample.pred_instances, 'masks'):
-			continue                                   # model has no masks
+# 		if not hasattr(det_sample.pred_instances, 'masks'):
+# 			continue                                   # model has no masks
 
-		inst = det_sample.pred_instances
-		keep = inst.scores > MASK_SCORE_THR
-		inst = inst[keep]
+# 		inst = det_sample.pred_instances
+# 		keep = inst.scores > MASK_SCORE_THR
+# 		inst = inst[keep]
 
-		if inst.masks.numel() == 0:
-			continue                                   # nothing above thr
+# 		if inst.masks.numel() == 0:
+# 			continue                                   # nothing above thr
 
-		for m, s, l in zip(inst.masks.bool(),
-						inst.scores,
-						inst.labels):
-			mask_back = derotate_mask(m.numpy(), invM, (w, h))
-			for poly in polygons_from_mask(mask_back):
-				collected.append((ang, poly, float(s), int(l)))
+# 		for m, s, l in zip(inst.masks.bool(),
+# 						inst.scores,
+# 						inst.labels):
+# 			mask_back = derotate_mask(m.numpy(), invM, (w, h))
+# 			for poly in polygons_from_mask(mask_back):
+# 				collected.append((ang, poly, float(s), int(l)))
 
-	# ── 2) Fuse polygons across rotations by IoU ----------------------------
-	fused = []   # [(Polygon, best_score, label, support_set)]
-	for rot_id, poly, scr, lab in collected:
-		merged = False
-		for i, (fp, fs, fl, support) in enumerate(fused):
-			if lab != fl:
-				continue
-			if iou(poly, fp) >= FUSE_IOU_THR:
-				new_poly   = fp.union(poly)
-				new_score  = (fs+scr) / 2
-				new_supp   = support | {rot_id}          # union of sets
-				fused[i]   = (new_poly, new_score, lab, new_supp)
-				merged = True
-				break
-		if not merged:
-			fused.append((poly, scr, lab, {rot_id}))
-	fused = [t for t in fused if len(t[3]) >= MIN_SUPPORT]
+# 	# ── 2) Fuse polygons across rotations by IoU ----------------------------
+# 	fused = []   # [(Polygon, best_score, label, support_set)]
+# 	for rot_id, poly, scr, lab in collected:
+# 		merged = False
+# 		for i, (fp, fs, fl, support) in enumerate(fused):
+# 			if lab != fl:
+# 				continue
+# 			if iou(poly, fp) >= FUSE_IOU_THR:
+# 				new_poly   = fp.union(poly)
+# 				new_score  = (fs+scr) / 2
+# 				new_supp   = support | {rot_id}          # union of sets
+# 				fused[i]   = (new_poly, new_score, lab, new_supp)
+# 				merged = True
+# 				break
+# 		if not merged:
+# 			fused.append((poly, scr, lab, {rot_id}))
+# 	fused = [t for t in fused if len(t[3]) >= MIN_SUPPORT]
 
-	# ── 3) Build an MMDet sample & pretty overlay ---------------------------
-	fused_sample = sample_from_fused(fused, h, w)
+# 	# ── 3) Build an MMDet sample & pretty overlay ---------------------------
+# 	fused_sample = sample_from_fused(fused, h, w)
 
-	visualizer = DetLocalVisualizer(alpha=0.3, line_width=0.3)
-	# visualizer = FilledMaskVisualizer(
-	# 	alpha=0.3,                     # transparency for bboxes
-	# 	line_width=1,
-	# 	# dataset_meta=model.dataset_meta  # keeps class colours consistent
-	# )	
-	visualizer.add_datasample(
-		name='rotFuse',               # window name (ignored because show=False)
-		image=img_orig,               # original image
-		data_sample=fused_sample,     # our fused predictions
-		draw_pred=True,               # draw them
-		pred_score_thr=0.0,           # already filtered → show all
-		draw_gt=True,
-		show=False,
-		out_file=os.path.join(output_dir, f"rotFuse_{image_file}")
-	)
-	print("Saved overlay →", os.path.join(output_dir, f"rotFuse_{image_file}"))
+# 	visualizer = DetLocalVisualizer(alpha=0.3, line_width=0.3)
+# 	# visualizer = FilledMaskVisualizer(
+# 	# 	alpha=0.3,                     # transparency for bboxes
+# 	# 	line_width=1,
+# 	# 	# dataset_meta=model.dataset_meta  # keeps class colours consistent
+# 	# )	
+# 	visualizer.add_datasample(
+# 		name='rotFuse',               # window name (ignored because show=False)
+# 		image=img_orig,               # original image
+# 		data_sample=fused_sample,     # our fused predictions
+# 		draw_pred=True,               # draw them
+# 		pred_score_thr=0.0,           # already filtered → show all
+# 		draw_gt=True,
+# 		show=False,
+# 		out_file=os.path.join(output_dir, f"rotFuse_{image_file}")
+# 	)
+# 	print("Saved overlay →", os.path.join(output_dir, f"rotFuse_{image_file}"))
 
 run_cfg = dict(
 	timestamp      = datetime.now().strftime("%Y%m%d_%H%M%S"),

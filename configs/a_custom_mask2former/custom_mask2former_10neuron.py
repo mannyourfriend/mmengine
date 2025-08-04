@@ -148,7 +148,7 @@ model = dict(
 # dataset settings
 backend_args = None
 scale = image_size
-data_root = r"C:\Users\five\Desktop\Manny\05a11_10neuron_crowdSoma/"
+data_root = r"C:\Users\five\Desktop\Manny\05a11_10neuron/"
 dataset_type = 'COCOCustomDataset'
 
 train_pipeline = [

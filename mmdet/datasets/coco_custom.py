@@ -16,12 +16,13 @@ class COCOCustomDataset(BaseDetDataset):
 	"""Custom COCO Dataset for MMSegmentation."""
 
 	METAINFO = {
-		'classes': ['NeuriteSoma', 'OutOfBound', 'Soma'],
+		'classes': ['NeuriteSoma', 'OutOfBound', 'Soma', 'Cluster'],
 		'palette': [
-		[0, 0, 0],        # background - black
+		# [0, 0, 0],        # background - black
 		[128, 0, 0],      # NeuriteSoma - dark red
 		[0, 128, 0],      # OutOfBound - dark green
-		[128, 128, 0]     # Soma - olive
+		[128, 128, 0],     # Soma - olive
+		[0, 0, 128]
 	]
 	}
 	COCOAPI = COCO

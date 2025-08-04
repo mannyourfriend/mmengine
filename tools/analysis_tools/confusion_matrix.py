@@ -263,7 +263,7 @@ def main():
                                                   args.tp_iou_thr)
     plot_confusion_matrix(
         confusion_matrix,
-        dataset.metainfo['classes'] + ('background', ),
+        dataset.metainfo['classes'] + ['background', ],
         save_dir=args.save_dir,
         show=args.show,
         color_theme=args.color_theme)

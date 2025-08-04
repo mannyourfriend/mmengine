@@ -370,7 +370,7 @@ class DetLocalVisualizer(Visualizer):
 			return colors
 		self.set_image(image)
 		legend_info = []  # Will hold tuples (color, label_text) for legend
-
+		colors = get_distinct_colors(len(instances))
 		# Process bounding boxes if present
 		if 'bboxes' in instances and instances.bboxes.sum() > 0:
 			bboxes = instances.bboxes
@@ -386,7 +386,7 @@ class DetLocalVisualizer(Visualizer):
 
 			num_instances = len(labels)
 			# Generate distinct colors per instance
-			colors = get_distinct_colors(num_instances)
+			# colors = get_distinct_colors(num_instances)
 
 			# Draw bounding boxes with the new colors
 			self.draw_bboxes(
@@ -419,7 +419,7 @@ class DetLocalVisualizer(Visualizer):
 
 			masks = masks.astype(bool)
 			num_instances = len(labels)
-			colors = get_distinct_colors(num_instances)
+			# colors = get_distinct_colors(num_instances)
 
 			# Draw each mask’s contour rather than a filled mask
 			for i, mask in enumerate(masks):
