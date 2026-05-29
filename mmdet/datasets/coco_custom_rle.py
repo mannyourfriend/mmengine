@@ -14,7 +14,13 @@ print("Registering COCOCustomDataset")
 
 @DATASETS.register_module()
 class COCOCustomDataset(BaseDetDataset):
-	"""Custom COCO Dataset for MMSegmentation."""
+	"""Custom COCO instance-segmentation dataset for the neuron Mask2Former project.
+
+	This is the live dataset class (registered in ``mmdet/datasets/__init__.py``).
+	It reads COCO-format annotations and normalizes polygon segmentations to merged
+	RLE masks. Class names are fixed in ``METAINFO`` below and must match the
+	``categories`` in the COCO JSON. See ``HANDOFF.md`` for the full workflow.
+	"""
 
 	METAINFO = {
 		'classes': ['NeuriteSoma', 'OutOfBound', 'Soma', 'Cluster'],

@@ -8,9 +8,9 @@ import cv2
 import mmcv
 
 try:
-	import seaborn as sns
+    import seaborn as sns
 except ImportError:
-	sns = None
+    sns = None
 import torch
 from mmengine.dist import master_only
 from mmengine.structures import InstanceData, PixelData
@@ -25,885 +25,366 @@ from .palette import _get_adaptive_scales, get_palette, jitter_color
 
 @VISUALIZERS.register_module()
 class DetLocalVisualizer(Visualizer):
-	"""MMDetection Local Visualizer.
-
-	Args:
-		name (str): Name of the instance. Defaults to 'visualizer'.
-		image (np.ndarray, optional): the origin image to draw. The format
-			should be RGB. Defaults to None.
-		vis_backends (list, optional): Visual backend config list.
-			Defaults to None.
-		save_dir (str, optional): Save file dir for all storage backends.
-			If it is None, the backend storage will not save any data.
-		bbox_color (str, tuple(int), optional): Color of bbox lines.
-			The tuple of color should be in BGR order. Defaults to None.
-		text_color (str, tuple(int), optional): Color of texts.
-			The tuple of color should be in BGR order.
-			Defaults to (200, 200, 200).
-		mask_color (str, tuple(int), optional): Color of masks.
-			The tuple of color should be in BGR order.
-			Defaults to None.
-		line_width (int, float): The linewidth of lines.
-			Defaults to 3.
-		alpha (int, float): The transparency of bboxes or mask.
-			Defaults to 0.8.
-
-	Examples:
-		>>> import numpy as np
-		>>> import torch
-		>>> from mmengine.structures import InstanceData
-		>>> from mmdet.structures import DetDataSample
-		>>> from mmdet.visualization import DetLocalVisualizer
-
-		>>> det_local_visualizer = DetLocalVisualizer()
-		>>> image = np.random.randint(0, 256,
-		...                     size=(10, 12, 3)).astype('uint8')
-		>>> gt_instances = InstanceData()
-		>>> gt_instances.bboxes = torch.Tensor([[1, 2, 2, 5]])
-		>>> gt_instances.labels = torch.randint(0, 2, (1,))
-		>>> gt_det_data_sample = DetDataSample()
-		>>> gt_det_data_sample.gt_instances = gt_instances
-		>>> det_local_visualizer.add_datasample('image', image,
-		...                         gt_det_data_sample)
-		>>> det_local_visualizer.add_datasample(
-		...                       'image', image, gt_det_data_sample,
-		...                        out_file='out_file.jpg')
-		>>> det_local_visualizer.add_datasample(
-		...                        'image', image, gt_det_data_sample,
-		...                         show=True)
-		>>> pred_instances = InstanceData()
-		>>> pred_instances.bboxes = torch.Tensor([[2, 4, 4, 8]])
-		>>> pred_instances.labels = torch.randint(0, 2, (1,))
-		>>> pred_det_data_sample = DetDataSample()
-		>>> pred_det_data_sample.pred_instances = pred_instances
-		>>> det_local_visualizer.add_datasample('image', image,
-		...                         gt_det_data_sample,
-		...                         pred_det_data_sample)
-	"""
-
-	def __init__(self,
-				name: str = 'visualizer',
-				image: Optional[np.ndarray] = None,
-				vis_backends: Optional[Dict] = None,
-				save_dir: Optional[str] = None,
-				idToName: Optional[Dict] = None,
-				bbox_color: Optional[Union[str, Tuple[int]]] = None,
-				text_color: Optional[Union[str,
-											Tuple[int]]] = (200, 200, 200),
-				mask_color: Optional[Union[str, Tuple[int]]] = None,
-				line_width: Union[int, float] = 3,
-				alpha: float = 0.8) -> None:
-		super().__init__(
-			name=name,
-			image=image,
-			vis_backends=vis_backends,
-			save_dir=save_dir)
-		self.idToName = idToName
-		self.bbox_color = bbox_color
-		self.text_color = text_color
-		self.mask_color = mask_color
-		self.line_width = line_width
-		self.alpha = alpha
-		# Set default value. When calling
-		# `DetLocalVisualizer().dataset_meta=xxx`,
-		# it will override the default value.
-		self.dataset_meta = {}
-
-	# def _draw_instances(self, image: np.ndarray, instances: ['InstanceData'],
-	#                     classes: Optional[List[str]],
-	#                     palette: Optional[List[tuple]]) -> np.ndarray:
-	#     """Draw instances of GT or prediction.
-
-	#     Args:
-	#         image (np.ndarray): The image to draw.
-	#         instances (:obj:`InstanceData`): Data structure for
-	#             instance-level annotations or predictions.
-	#         classes (List[str], optional): Category information.
-	#         palette (List[tuple], optional): Palette information
-	#             corresponding to the category.
-
-	#     Returns:
-	#         np.ndarray: the drawn image which channel is RGB.
-	#     """
-	#     self.set_image(image)
-
-	#     if 'bboxes' in instances and instances.bboxes.sum() > 0:
-	#         bboxes = instances.bboxes
-	#         labels = instances.labels
-
-	#         max_label = int(max(labels) if len(labels) > 0 else 0)
-	#         text_palette = get_palette(self.text_color, max_label + 1)
-	#         text_colors = [text_palette[label] for label in labels]
-
-	#         bbox_color = palette if self.bbox_color is None \
-	#             else self.bbox_color
-	#         bbox_palette = get_palette(bbox_color, max_label + 1)
-	#         colors = [bbox_palette[label] for label in labels]
-	#         self.draw_bboxes(
-	#             bboxes,
-	#             edge_colors=colors,
-	#             alpha=self.alpha,
-	#             line_widths=self.line_width)
-
-	#         positions = bboxes[:, :2] + self.line_width
-	#         areas = (bboxes[:, 3] - bboxes[:, 1]) * (
-	#             bboxes[:, 2] - bboxes[:, 0])
-	#         scales = _get_adaptive_scales(areas)
-
-	#         for i, (pos, label) in enumerate(zip(positions, labels)):
-	#             if 'label_names' in instances:
-	#                 label_text = instances.label_names[i]
-	#             else:
-	#                 label_text = classes[
-	#                     label] if classes is not None else f'class {label}'
-	#             if 'scores' in instances:
-	#                 score = round(float(instances.scores[i]) * 100, 1)
-	#                 label_text += f': {score}'
-
-	#             self.draw_texts(
-	#                 label_text,
-	#                 pos,
-	#                 colors=text_colors[i],
-	#                 font_sizes=int(13 * scales[i]),
-	#                 bboxes=[{
-	#                     'facecolor': 'black',
-	#                     'alpha': 0.8,
-	#                     'pad': 0.7,
-	#                     'edgecolor': 'none'
-	#                 }])
-
-	#     if 'masks' in instances:
-	#         labels = instances.labels
-	#         masks = instances.masks
-	#         if isinstance(masks, torch.Tensor):
-	#             masks = masks.numpy()
-	#         elif isinstance(masks, (PolygonMasks, BitmapMasks)):
-	#             masks = masks.to_ndarray()
-
-	#         masks = masks.astype(bool)
-
-	#         max_label = int(max(labels) if len(labels) > 0 else 0)
-	#         mask_color = palette if self.mask_color is None \
-	#             else self.mask_color
-	#         mask_palette = get_palette(mask_color, max_label + 1)
-	#         colors = [jitter_color(mask_palette[label]) for label in labels]
-	#         text_palette = get_palette(self.text_color, max_label + 1)
-	#         text_colors = [text_palette[label] for label in labels]
-
-	#         polygons = []
-	#         for i, mask in enumerate(masks):
-	#             contours, _ = bitmap_to_polygon(mask)
-	#             polygons.extend(contours)
-	#         self.draw_polygons(polygons, edge_colors='w', alpha=self.alpha)
-	#         self.draw_binary_masks(masks, colors=colors, alphas=self.alpha)
-
-	#         if len(labels) > 0 and \
-	#                 ('bboxes' not in instances or
-	#                  instances.bboxes.sum() == 0):
-	#             # instances.bboxes.sum()==0 represent dummy bboxes.
-	#             # A typical example of SOLO does not exist bbox branch.
-	#             areas = []
-	#             positions = []
-	#             for mask in masks:
-	#                 _, _, stats, centroids = cv2.connectedComponentsWithStats(
-	#                     mask.astype(np.uint8), connectivity=8)
-	#                 if stats.shape[0] > 1:
-	#                     largest_id = np.argmax(stats[1:, -1]) + 1
-	#                     positions.append(centroids[largest_id])
-	#                     areas.append(stats[largest_id, -1])
-	#             areas = np.stack(areas, axis=0)
-	#             scales = _get_adaptive_scales(areas)
-
-	#             for i, (pos, label) in enumerate(zip(positions, labels)):
-	#                 if 'label_names' in instances:
-	#                     label_text = instances.label_names[i]
-	#                 else:
-	#                     label_text = classes[
-	#                         label] if classes is not None else f'class {label}'
-	#                 if 'scores' in instances:
-	#                     score = round(float(instances.scores[i]) * 100, 1)
-	#                     label_text += f': {score}'
-
-	#                 self.draw_texts(
-	#                     label_text,
-	#                     pos,
-	#                     colors=text_colors[i],
-	#                     font_sizes=int(13 * scales[i]),
-	#                     horizontal_alignments='center',
-	#                     bboxes=[{
-	#                         'facecolor': 'black',
-	#                         'alpha': 0.8,
-	#                         'pad': 0.7,
-	#                         'edgecolor': 'none'
-	#                     }])
-	#     return self.get_image()
-
-
-
-# Modified _draw_instances function
-	# def _draw_instances(self, image: np.ndarray, instances, classes=None, palette=None) -> np.ndarray:
-	# 	self.set_image(image)
-		# def get_distinct_colors(n):
-		# 	cmap = cm.get_cmap('tab10', n)
-		# 	colors = []
-		# 	for i in range(n):
-		# 		# Convert colors to 0-255 integer tuples in BGR order
-		# 		rgb = tuple(int(255 * c) for c in cmap(i)[:3])
-		# 		# OpenCV uses BGR, so reverse the tuple
-		# 		colors.append(rgb[::-1])
-		# 	return colors
-
-	# 	# Process bounding boxes if present
-	# 	if 'bboxes' in instances and instances.bboxes.sum() > 0:
-	# 		bboxes = instances.bboxes
-	# 		labels = instances.labels
-	# 		scores = instances.scores if 'scores' in instances else None
-
-	# 		# Sort detections by scores (lowest drawn first so highest appear on top)
-	# 		if scores is not None:
-	# 			order = scores.argsort()  # ascending order
-	# 			bboxes = bboxes[order]
-	# 			labels = labels[order]
-	# 			scores = scores[order]
-	# 		num_instances = len(labels)
-	# 		# Generate a distinct color for each instance
-	# 		colors = get_distinct_colors(num_instances)
-
-	# 		# Draw bounding boxes with the new colors
-	# 		self.draw_bboxes(
-	# 			bboxes,
-	# 			edge_colors=colors,
-	# 			alpha=self.alpha,
-	# 			line_widths=self.line_width)
-
-	# 		# Compute positions (here offset slightly upward for clarity)
-	# 		positions = bboxes[:, :2] + self.line_width
-	# 		areas = (bboxes[:, 3] - bboxes[:, 1]) * (bboxes[:, 2] - bboxes[:, 0])
-	# 		scales = _get_adaptive_scales(areas)
-
-	# 		for i, (pos, label) in enumerate(zip(positions, labels)):
-	# 			# Determine the label text
-	# 			label_text = classes[label] if classes is not None else f'class {label}'
-	# 			if scores is not None:
-	# 				score = round(float(scores[i]) * 100, 1)
-	# 				label_text += f': {score}'
-	# 			# Offset the text above the bounding box to avoid overlap and convert to np.array
-	# 			pos_offset = np.array([pos[0], pos[1] - 10])
-	# 			self.draw_texts(
-	# 				label_text,
-	# 				pos_offset,
-	# 				colors=colors[i],
-	# 				font_sizes=int(13 * scales[i]),
-	# 				bboxes=[{'facecolor': 'black', 'alpha': 0.8, 'pad': 0.7, 'edgecolor': 'none'}])		
-	# 	# Process masks if present – here we draw only the contours for clarity
-	# 	if 'masks' in instances:
-	# 		labels = instances.labels
-	# 		masks = instances.masks
-	# 		if isinstance(masks, torch.Tensor):
-	# 			masks = masks.numpy()
-	# 		# If masks come in a special class (e.g., PolygonMasks or BitmapMasks), convert them
-	# 		elif hasattr(masks, 'to_ndarray'):
-	# 			masks = masks.to_ndarray()
-
-	# 		masks = masks.astype(bool)
-	# 		num_instances = len(labels)
-	# 		colors = get_distinct_colors(num_instances)
-
-	# 		# Instead of drawing filled masks, extract and draw the polygon boundaries
-	# 		for i, mask in enumerate(masks):
-	# 			contours, _ = bitmap_to_polygon(mask)
-	# 			self.draw_polygons(contours, edge_colors=colors[i], alpha=1.0)
-		
-	# 	return self.get_image()
-	def _draw_instances(self, image: np.ndarray, instances, classes=None, palette=None, draw_legend=True) -> np.ndarray:
-		"""
-		Draw instances (bounding boxes and masks) on image.
-		If draw_legend=True, create a legend panel to the right of the image.
-		"""
-		def create_legend_panel(legend_info, panel_width=300, row_height=40, font_scale=0.7, font_thickness=2):
-			"""
-			Creates a legend panel image.
-			
-			Args:
-				legend_info: List of tuples, each tuple is (color, text) where
-							color is a BGR tuple (e.g., (B, G, R)) and text is a string.
-				panel_width: Width of the legend panel in pixels.
-				row_height: Height for each legend entry row.
-				font_scale: Scale factor for text.
-				font_thickness: Thickness for the text.
-			
-			Returns:
-				legend_panel: An image (numpy.ndarray) of the legend panel.
-			"""
-			num_rows = len(legend_info)
-			panel_height = num_rows * row_height + 20  # additional margin at the top/bottom
-			legend_panel = 255 * np.ones((panel_height, panel_width, 3), dtype=np.uint8)
-			
-			for i, (color, text) in enumerate(legend_info):
-				y = 10 + i * row_height  # starting y position for the row
-				swatch_size = row_height - 10  # size for the color box (swatch)
-				x_swatch = 10
-				y_swatch = y
-				
-				# Draw a filled rectangle (color swatch)
-				cv2.rectangle(legend_panel, (x_swatch, y_swatch), 
-							(x_swatch + swatch_size, y_swatch + swatch_size), color, -1)
-				
-				# Compute text size to vertically center it next to the swatch
-				text_size, baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-				x_text = x_swatch + swatch_size + 10
-				# Position text vertically centered relative to the swatch
-				y_text = y_swatch + swatch_size - (swatch_size - text_size[1]) // 2
-				
-				cv2.putText(legend_panel, text, (x_text, y_text), cv2.FONT_HERSHEY_SIMPLEX,
-							font_scale, (0, 0, 0), font_thickness, cv2.LINE_AA)
-			return legend_panel
-		
-		def get_distinct_colors(n):
-			cmap = cm.get_cmap('tab10', n)
-			colors = []
-			for i in range(n):
-				# Convert colors to 0-255 integer tuples in BGR order
-				rgb = tuple(int(255 * c) for c in cmap(i)[:3])
-				# OpenCV uses BGR, so reverse the tuple
-				colors.append(rgb[::-1])
-			return colors
-		self.set_image(image)
-		legend_info = []  # Will hold tuples (color, label_text) for legend
-		colors = get_distinct_colors(len(instances))
-		# Process bounding boxes if present
-		if 'bboxes' in instances and instances.bboxes.sum() > 0:
-			bboxes = instances.bboxes
-			labels = instances.labels
-			scores = instances.scores if 'scores' in instances else None
-
-			# Sort detections by scores so that lower-confidence ones are drawn first
-			if scores is not None:
-				order = scores.argsort()  # ascending order
-				bboxes = bboxes[order]
-				labels = labels[order]
-				scores = scores[order]
-
-			num_instances = len(labels)
-			# Generate distinct colors per instance
-			# colors = get_distinct_colors(num_instances)
-
-			# Draw bounding boxes with the new colors
-			self.draw_bboxes(
-				bboxes,
-				edge_colors=colors,
-				alpha=self.alpha,
-				line_widths=self.line_width)
-
-			# Collect legend info without drawing texts on the image
-			for i, label in enumerate(labels):
-				# # Prepare the text: Class name and confidence (if available)
-				if classes is not None:
-					label_text = classes[label]
-				else:
-					label_text = f'class {label}'
-				if scores is not None:
-					score = round(float(scores[i]) * 100, 1)
-					label_text += f' ({score}%)'
-				legend_info.append((colors[i], label_text))
-				# legend_info.append((colors[i], self.idToName[int(label)]))
-
-		# Process masks if present – here we only draw contours for clarity
-		if 'masks' in instances:
-			labels = instances.labels
-			masks = instances.masks
-			if isinstance(masks, torch.Tensor):
-				masks = masks.numpy()
-			elif hasattr(masks, 'to_ndarray'):
-				masks = masks.to_ndarray()
-
-			masks = masks.astype(bool)
-			num_instances = len(labels)
-			# colors = get_distinct_colors(num_instances)
-
-			# Draw each mask’s contour rather than a filled mask
-			for i, mask in enumerate(masks):
-				contours, _ = bitmap_to_polygon(mask)
-				self.draw_polygons(
-					contours,
-					edge_colors=colors[i],
-					face_colors=colors[i],     # <─ NEW: fill the interior
-					alpha=1.0)
-				# (Optional) You could add to legend_info here too if masks without boxes are drawn
-
-		drawn_image = self.get_image()
-
-		# If legend is enabled and we have entries, create and append the legend panel
-		if draw_legend and legend_info:
-			legend_panel = create_legend_panel(legend_info, panel_width=200, row_height=30, font_scale=0.5)
-			# Resize legend panel height to match the drawn image if needed
-			drawn_height = drawn_image.shape[0]
-			legend_panel = cv2.resize(legend_panel, (legend_panel.shape[1], drawn_height))
-			# Concatenate legend panel to the right of the drawn image
-			drawn_image = np.concatenate((drawn_image, legend_panel), axis=1)
-
-		return drawn_image
-
-	def _draw_panoptic_seg(self, image: np.ndarray,
-						panoptic_seg: ['PixelData'],
-						classes: Optional[List[str]],
-						palette: Optional[List]) -> np.ndarray:
-		"""Draw panoptic seg of GT or prediction.
-
-		Args:
-			image (np.ndarray): The image to draw.
-			panoptic_seg (:obj:`PixelData`): Data structure for
-				pixel-level annotations or predictions.
-			classes (List[str], optional): Category information.
-
-		Returns:
-			np.ndarray: the drawn image which channel is RGB.
-		"""
-		# TODO: Is there a way to bypass？
-		num_classes = len(classes)
-
-		panoptic_seg_data = panoptic_seg.sem_seg[0]
-
-		ids = np.unique(panoptic_seg_data)[::-1]
-
-		if 'label_names' in panoptic_seg:
-			# open set panoptic segmentation
-			classes = panoptic_seg.metainfo['label_names']
-			ignore_index = panoptic_seg.metainfo.get('ignore_index',
-													len(classes))
-			ids = ids[ids != ignore_index]
-		else:
-			# for VOID label
-			ids = ids[ids != num_classes]
-
-		labels = np.array([id % INSTANCE_OFFSET for id in ids], dtype=np.int64)
-		segms = (panoptic_seg_data[None] == ids[:, None, None])
-
-		max_label = int(max(labels) if len(labels) > 0 else 0)
-
-		mask_color = palette if self.mask_color is None \
-			else self.mask_color
-		mask_palette = get_palette(mask_color, max_label + 1)
-		colors = [mask_palette[label] for label in labels]
-
-		self.set_image(image)
-
-		# draw segm
-		polygons = []
-		for i, mask in enumerate(segms):
-			contours, _ = bitmap_to_polygon(mask)
-			polygons.extend(contours)
-		self.draw_polygons(polygons, edge_colors='w', alpha=self.alpha)
-		self.draw_binary_masks(segms, colors=colors, alphas=self.alpha)
-
-		# draw label
-		areas = []
-		positions = []
-		for mask in segms:
-			_, _, stats, centroids = cv2.connectedComponentsWithStats(
-				mask.astype(np.uint8), connectivity=8)
-			max_id = np.argmax(stats[1:, -1]) + 1
-			positions.append(centroids[max_id])
-			areas.append(stats[max_id, -1])
-		areas = np.stack(areas, axis=0)
-		scales = _get_adaptive_scales(areas)
-
-		text_palette = get_palette(self.text_color, max_label + 1)
-		text_colors = [text_palette[label] for label in labels]
-
-		for i, (pos, label) in enumerate(zip(positions, labels)):
-			label_text = classes[label]
-
-			self.draw_texts(
-				label_text,
-				pos,
-				colors=text_colors[i],
-				font_sizes=int(13 * scales[i]),
-				bboxes=[{
-					'facecolor': 'black',
-					'alpha': 0.8,
-					'pad': 0.7,
-					'edgecolor': 'none'
-				}],
-				horizontal_alignments='center')
-		return self.get_image()
-
-	def _draw_sem_seg(self, image: np.ndarray, sem_seg: PixelData,
-					classes: Optional[List],
-					palette: Optional[List]) -> np.ndarray:
-		"""Draw semantic seg of GT or prediction.
-
-		Args:
-			image (np.ndarray): The image to draw.
-			sem_seg (:obj:`PixelData`): Data structure for pixel-level
-				annotations or predictions.
-			classes (list, optional): Input classes for result rendering, as
-				the prediction of segmentation model is a segment map with
-				label indices, `classes` is a list which includes items
-				responding to the label indices. If classes is not defined,
-				visualizer will take `cityscapes` classes by default.
-				Defaults to None.
-			palette (list, optional): Input palette for result rendering, which
-				is a list of color palette responding to the classes.
-				Defaults to None.
-
-		Returns:
-			np.ndarray: the drawn image which channel is RGB.
-		"""
-		sem_seg_data = sem_seg.sem_seg
-		if isinstance(sem_seg_data, torch.Tensor):
-			sem_seg_data = sem_seg_data.numpy()
-
-		# 0 ~ num_class, the value 0 means background
-		ids = np.unique(sem_seg_data)
-		ignore_index = sem_seg.metainfo.get('ignore_index', 255)
-		ids = ids[ids != ignore_index]
-
-		if 'label_names' in sem_seg:
-			# open set semseg
-			label_names = sem_seg.metainfo['label_names']
-		else:
-			label_names = classes
-
-		labels = np.array(ids, dtype=np.int64)
-		colors = [palette[label] for label in labels]
-
-		self.set_image(image)
-
-		# draw semantic masks
-		for i, (label, color) in enumerate(zip(labels, colors)):
-			masks = sem_seg_data == label
-			self.draw_binary_masks(masks, colors=[color], alphas=self.alpha)
-			label_text = label_names[label]
-			_, _, stats, centroids = cv2.connectedComponentsWithStats(
-				masks[0].astype(np.uint8), connectivity=8)
-			if stats.shape[0] > 1:
-				largest_id = np.argmax(stats[1:, -1]) + 1
-				centroids = centroids[largest_id]
-
-				areas = stats[largest_id, -1]
-				scales = _get_adaptive_scales(areas)
-
-				self.draw_texts(
-					label_text,
-					centroids,
-					colors=(255, 255, 255),
-					font_sizes=int(13 * scales),
-					horizontal_alignments='center',
-					bboxes=[{
-						'facecolor': 'black',
-						'alpha': 0.8,
-						'pad': 0.7,
-						'edgecolor': 'none'
-					}])
-
-		return self.get_image()
-
-	@master_only
-	def add_datasample(
-			self,
-			name: str,
-			image: np.ndarray,
-			data_sample: Optional['DetDataSample'] = None,
-			draw_gt: bool = True,
-			draw_pred: bool = True,
-			show: bool = False,
-			wait_time: float = 0,
-			# TODO: Supported in mmengine's Viusalizer.
-			out_file: Optional[str] = None,
-			pred_score_thr: float = 0.3,
-			step: int = 0) -> None:
-		"""Draw datasample and save to all backends.
-
-		- If GT and prediction are plotted at the same time, they are
-		displayed in a stitched image where the left image is the
-		ground truth and the right image is the prediction.
-		- If ``show`` is True, all storage backends are ignored, and
-		the images will be displayed in a local window.
-		- If ``out_file`` is specified, the drawn image will be
-		saved to ``out_file``. t is usually used when the display
-		is not available.
-
-		Args:
-			name (str): The image identifier.
-			image (np.ndarray): The image to draw.
-			data_sample (:obj:`DetDataSample`, optional): A data
-				sample that contain annotations and predictions.
-				Defaults to None.
-			draw_gt (bool): Whether to draw GT DetDataSample. Default to True.
-			draw_pred (bool): Whether to draw Prediction DetDataSample.
-				Defaults to True.
-			show (bool): Whether to display the drawn image. Default to False.
-			wait_time (float): The interval of show (s). Defaults to 0.
-			out_file (str): Path to output file. Defaults to None.
-			pred_score_thr (float): The threshold to visualize the bboxes
-				and masks. Defaults to 0.3.
-			step (int): Global step value to record. Defaults to 0.
-		"""
-		image = image.clip(0, 255).astype(np.uint8)
-		classes = self.dataset_meta.get('classes', None)
-		palette = self.dataset_meta.get('palette', None)
-
-		gt_img_data = None
-		pred_img_data = None
-
-		if data_sample is not None:
-			data_sample = data_sample.cpu()
-
-		if draw_gt and data_sample is not None:
-			gt_img_data = image
-			if 'gt_instances' in data_sample:
-				gt_img_data = self._draw_instances(image,
-												data_sample.gt_instances,
-												classes, palette)
-			if 'gt_sem_seg' in data_sample:
-				gt_img_data = self._draw_sem_seg(gt_img_data,
-												data_sample.gt_sem_seg,
-												classes, palette)
-
-			if 'gt_panoptic_seg' in data_sample:
-				assert classes is not None, 'class information is ' \
-											'not provided when ' \
-											'visualizing panoptic ' \
-											'segmentation results.'
-				gt_img_data = self._draw_panoptic_seg(
-					gt_img_data, data_sample.gt_panoptic_seg, classes, palette)
-
-		if draw_pred and data_sample is not None:
-			pred_img_data = image
-			if 'pred_instances' in data_sample:
-				pred_instances = data_sample.pred_instances
-				pred_instances = pred_instances[
-					pred_instances.scores > pred_score_thr]
-				pred_img_data = self._draw_instances(image, pred_instances,
-													classes, palette)
-
-			if 'pred_sem_seg' in data_sample:
-				pred_img_data = self._draw_sem_seg(pred_img_data,
-												data_sample.pred_sem_seg,
-												classes, palette)
-
-			if 'pred_panoptic_seg' in data_sample:
-				assert classes is not None, 'class information is ' \
-											'not provided when ' \
-											'visualizing panoptic ' \
-											'segmentation results.'
-				pred_img_data = self._draw_panoptic_seg(
-					pred_img_data, data_sample.pred_panoptic_seg.numpy(),
-					classes, palette)
-
-		if gt_img_data is not None and pred_img_data is not None:
-			drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
-		elif gt_img_data is not None:
-			drawn_img = gt_img_data
-		elif pred_img_data is not None:
-			drawn_img = pred_img_data
-		else:
-			# Display the original image directly if nothing is drawn.
-			drawn_img = image
-
-		# It is convenient for users to obtain the drawn image.
-		# For example, the user wants to obtain the drawn image and
-		# save it as a video during video inference.
-		self.set_image(drawn_img)
-
-		if show:
-			self.show(drawn_img, win_name=name, wait_time=wait_time)
-
-		if out_file is not None:
-			mmcv.imwrite(drawn_img[..., ::-1], out_file)
-		else:
-			self.add_image(name, drawn_img, step)
+    """
+    MMDetection Local Visualizer modified to produce a three-panel output:
+    1. Original Image
+    2. Image with Bounding Boxes and Labels
+    3. Image with Segmentation Masks
+    """
+
+    def __init__(self,
+                 name: str = 'visualizer',
+                 image: Optional[np.ndarray] = None,
+                 vis_backends: Optional[Dict] = None,
+                 save_dir: Optional[str] = None,
+                 idToName: Optional[Dict] = None,
+                 bbox_color: Optional[Union[str, Tuple[int]]] = None,
+                 text_color: Optional[Union[str,
+                                            Tuple[int]]] = (200, 200, 200),
+                 mask_color: Optional[Union[str, Tuple[int]]] = None,
+                 line_width: Union[int, float] = 3,
+                 alpha: float = 0.8) -> None:
+        super().__init__(
+            name=name,
+            image=image,
+            vis_backends=vis_backends,
+            save_dir=save_dir)
+        self.idToName = idToName
+        self.bbox_color = bbox_color
+        self.text_color = text_color
+        self.mask_color = mask_color
+        self.line_width = line_width
+        self.alpha = alpha
+        # Set default value. When calling
+        # `DetLocalVisualizer().dataset_meta=xxx`,
+        # it will override the default value.
+        self.dataset_meta = {}
+
+    def _get_distinct_colors(self, n: int) -> List[Tuple[int, int, int]]:
+        """Generates n distinct colors from a colormap, in BGR format."""
+        cmap = cm.get_cmap('tab10', n)
+        colors = []
+        for i in range(n):
+            rgb = tuple(int(255 * c) for c in cmap(i)[:3])
+            colors.append(rgb[::-1])  # Convert RGB to BGR for OpenCV
+        return colors
+
+    def _draw_bboxes_with_labels(self, image: np.ndarray, instances: InstanceData,
+                                 classes: Optional[List[str]]) -> np.ndarray:
+        """Draws bounding boxes and labels with scores on the image."""
+        self.set_image(image)
+        
+        if not hasattr(instances, 'bboxes') or instances.bboxes.numel() == 0:
+            return self.get_image()
+
+        bboxes = instances.bboxes
+        labels = instances.labels
+        scores = instances.scores if 'scores' in instances else None
+        num_instances = len(labels)
+        
+        colors = self._get_distinct_colors(num_instances)
+
+        # Draw bounding boxes
+        self.draw_bboxes(
+            bboxes,
+            edge_colors=colors,
+            alpha=1.0,  # Solid outlines
+            line_widths=self.line_width)
+
+        # Prepare to draw text labels
+        positions = bboxes[:, :2] + self.line_width
+        areas = (bboxes[:, 3] - bboxes[:, 1]) * (bboxes[:, 2] - bboxes[:, 0])
+        scales = _get_adaptive_scales(areas.cpu().numpy())
+
+        for i, pos in enumerate(positions):
+            label_id = labels[i]
+            label_text = classes[label_id] if classes else f'class {label_id}'
+            
+            if scores is not None:
+                score_text = f'{float(scores[i]) * 100:.1f}%'
+                label_text = f'{label_text}: {score_text}'
+
+            self.draw_texts(
+                label_text,
+                pos,
+                colors=self.text_color,
+                font_sizes=int(13 * scales[i]),
+                bboxes=[{
+                    'facecolor': 'black',
+                    'alpha': 0.8,
+                    'pad': 0.7,
+                    'edgecolor': 'none'
+                }])
+        return self.get_image()
+
+    def _draw_filled_masks(self, image: np.ndarray, instances: InstanceData) -> np.ndarray:
+        """Draws filled, semi-transparent segmentation masks on the image."""
+        self.set_image(image)
+        
+        if not hasattr(instances, 'masks') or instances.masks.numel() == 0:
+            return self.get_image()
+            
+        masks = instances.masks.cpu().numpy()
+        num_instances = len(instances.labels)
+        colors = self._get_distinct_colors(num_instances)
+        
+        # Use the base visualizer's method to draw filled masks
+        self.draw_binary_masks(masks, colors=colors, alphas=self.alpha)
+
+        return self.get_image()
+
+    @master_only
+    def add_datasample(self,
+                       name: str,
+                       image: np.ndarray,
+                       data_sample: Optional['DetDataSample'] = None,
+                       draw_gt: bool = True,
+                       draw_pred: bool = True,
+                       show: bool = False,
+                       wait_time: float = 0,
+                       out_file: Optional[str] = None,
+                       pred_score_thr: float = 0.3,
+                       step: int = 0) -> None:
+        """
+        Draws a three-panel visualization (Original, BBoxes, Masks) and
+        saves it to backends.
+        """
+        image = image.clip(0, 255).astype(np.uint8)
+        classes = self.dataset_meta.get('classes', None)
+
+        pred_instances = None
+        if draw_pred and data_sample and hasattr(data_sample, 'pred_instances'):
+            pred_instances = data_sample.pred_instances.cpu()
+            if 'scores' in pred_instances:
+                pred_instances = pred_instances[
+                    pred_instances.scores > pred_score_thr]
+
+        # Panel 1: Original Image
+        panel_original = image.copy()
+
+        # If no predictions, the final image is just the original
+        if pred_instances is None or len(pred_instances) == 0:
+            drawn_img = panel_original
+        else:
+            # Panel 2: Image with Bounding Boxes and Labels
+            panel_bboxes = self._draw_bboxes_with_labels(
+                image.copy(), pred_instances, classes)
+
+            # Panel 3: Image with Segmentation Masks
+            panel_masks = self._draw_filled_masks(image.copy(),
+                                                  pred_instances)
+
+            # Ensure all panels have the same height before concatenation
+            target_height = panel_original.shape[0]
+            if panel_bboxes.shape[0] != target_height:
+                panel_bboxes = cv2.resize(
+                    panel_bboxes, (panel_bboxes.shape[1], target_height))
+            if panel_masks.shape[0] != target_height:
+                panel_masks = cv2.resize(
+                    panel_masks, (panel_masks.shape[1], target_height))
+
+            # Stitch the three panels together horizontally
+            drawn_img = np.concatenate(
+                (panel_original, panel_bboxes, panel_masks), axis=1)
+
+        # Save or show the final composite image
+        self.set_image(drawn_img)
+        if show:
+            self.show(drawn_img, win_name=name, wait_time=wait_time)
+        if out_file is not None:
+            mmcv.imwrite(drawn_img[..., ::-1], out_file)
+        else:
+            self.add_image(name, drawn_img, step)
 
 
 def random_color(seed):
-	"""Random a color according to the input seed."""
-	if sns is None:
-		raise RuntimeError('motmetrics is not installed,\
-				please install it by: pip install seaborn')
-	np.random.seed(seed)
-	colors = sns.color_palette()
-	color = colors[np.random.choice(range(len(colors)))]
-	color = tuple([int(255 * c) for c in color])
-	return color
+    """Random a color according to the input seed."""
+    if sns is None:
+        raise RuntimeError('motmetrics is not installed,\
+                           please install it by: pip install seaborn')
+    np.random.seed(seed)
+    colors = sns.color_palette()
+    color = colors[np.random.choice(range(len(colors)))]
+    color = tuple([int(255 * c) for c in color])
+    return color
 
 
 @VISUALIZERS.register_module()
 class TrackLocalVisualizer(Visualizer):
-	"""Tracking Local Visualizer for the MOT, VIS tasks.
+    """Tracking Local Visualizer for the MOT, VIS tasks.
 
-	Args:
-		name (str): Name of the instance. Defaults to 'visualizer'.
-		image (np.ndarray, optional): the origin image to draw. The format
-			should be RGB. Defaults to None.
-		vis_backends (list, optional): Visual backend config list.
-			Defaults to None.
-		save_dir (str, optional): Save file dir for all storage backends.
-			If it is None, the backend storage will not save any data.
-		line_width (int, float): The linewidth of lines.
-			Defaults to 3.
-		alpha (int, float): The transparency of bboxes or mask.
-				Defaults to 0.8.
-	"""
+    Args:
+        name (str): Name of the instance. Defaults to 'visualizer'.
+        image (np.ndarray, optional): the origin image to draw. The format
+            should be RGB. Defaults to None.
+        vis_backends (list, optional): Visual backend config list.
+            Defaults to None.
+        save_dir (str, optional): Save file dir for all storage backends.
+            If it is None, the backend storage will not save any data.
+        line_width (int, float): The linewidth of lines.
+            Defaults to 3.
+        alpha (int, float): The transparency of bboxes or mask.
+                Defaults to 0.8.
+    """
 
-	def __init__(self,
-				name: str = 'visualizer',
-				image: Optional[np.ndarray] = None,
-				vis_backends: Optional[Dict] = None,
-				save_dir: Optional[str] = None,
-				line_width: Union[int, float] = 3,
-				alpha: float = 0.8) -> None:
-		super().__init__(name, image, vis_backends, save_dir)
-		self.line_width = line_width
-		self.alpha = alpha
-		# Set default value. When calling
-		# `TrackLocalVisualizer().dataset_meta=xxx`,
-		# it will override the default value.
-		self.dataset_meta = {}
+    def __init__(self,
+                 name: str = 'visualizer',
+                 image: Optional[np.ndarray] = None,
+                 vis_backends: Optional[Dict] = None,
+                 save_dir: Optional[str] = None,
+                 line_width: Union[int, float] = 3,
+                 alpha: float = 0.8) -> None:
+        super().__init__(name, image, vis_backends, save_dir)
+        self.line_width = line_width
+        self.alpha = alpha
+        # Set default value. When calling
+        # `TrackLocalVisualizer().dataset_meta=xxx`,
+        # it will override the default value.
+        self.dataset_meta = {}
 
-	def _draw_instances(self, image: np.ndarray,
-						instances: InstanceData) -> np.ndarray:
-		"""Draw instances of GT or prediction.
+    def _draw_instances(self, image: np.ndarray,
+                        instances: InstanceData) -> np.ndarray:
+        """Draw instances of GT or prediction.
 
-		Args:
-			image (np.ndarray): The image to draw.
-			instances (:obj:`InstanceData`): Data structure for
-				instance-level annotations or predictions.
-		Returns:
-			np.ndarray: the drawn image which channel is RGB.
-		"""
-		self.set_image(image)
-		classes = self.dataset_meta.get('classes', None)
+        Args:
+            image (np.ndarray): The image to draw.
+            instances (:obj:`InstanceData`): Data structure for
+                instance-level annotations or predictions.
+        Returns:
+            np.ndarray: the drawn image which channel is RGB.
+        """
+        self.set_image(image)
+        classes = self.dataset_meta.get('classes', None)
 
-		# get colors and texts
-		# for the MOT and VIS tasks
-		colors = [random_color(_id) for _id in instances.instances_id]
-		categories = [
-			classes[label] if classes is not None else f'cls{label}'
-			for label in instances.labels
-		]
-		if 'scores' in instances:
-			texts = [
-				f'{category_name}\n{instance_id} | {score:.2f}'
-				for category_name, instance_id, score in zip(
-					categories, instances.instances_id, instances.scores)
-			]
-		else:
-			texts = [
-				f'{category_name}\n{instance_id}' for category_name,
-				instance_id in zip(categories, instances.instances_id)
-			]
+        # get colors and texts
+        # for the MOT and VIS tasks
+        colors = [random_color(_id) for _id in instances.instances_id]
+        categories = [
+            classes[label] if classes is not None else f'cls{label}'
+            for label in instances.labels
+        ]
+        if 'scores' in instances:
+            texts = [
+                f'{category_name}\n{instance_id} | {score:.2f}'
+                for category_name, instance_id, score in zip(
+                    categories, instances.instances_id, instances.scores)
+            ]
+        else:
+            texts = [
+                f'{category_name}\n{instance_id}' for category_name,
+                instance_id in zip(categories, instances.instances_id)
+            ]
 
-		# draw bboxes and texts
-		if 'bboxes' in instances:
-			# draw bboxes
-			bboxes = instances.bboxes.clone()
-			self.draw_bboxes(
-				bboxes,
-				edge_colors=colors,
-				alpha=self.alpha,
-				line_widths=self.line_width)
-			# draw texts
-			if texts is not None:
-				positions = bboxes[:, :2] + self.line_width
-				areas = (bboxes[:, 3] - bboxes[:, 1]) * (
-					bboxes[:, 2] - bboxes[:, 0])
-				scales = _get_adaptive_scales(areas.cpu().numpy())
-				for i, pos in enumerate(positions):
-					self.draw_texts(
-						texts[i],
-						pos,
-						colors='black',
-						font_sizes=int(13 * scales[i]),
-						bboxes=[{
-							'facecolor': [c / 255 for c in colors[i]],
-							'alpha': 0.8,
-							'pad': 0.7,
-							'edgecolor': 'none'
-						}])
+        # draw bboxes and texts
+        if 'bboxes' in instances:
+            # draw bboxes
+            bboxes = instances.bboxes.clone()
+            self.draw_bboxes(
+                bboxes,
+                edge_colors=colors,
+                alpha=self.alpha,
+                line_widths=self.line_width)
+            # draw texts
+            if texts is not None:
+                positions = bboxes[:, :2] + self.line_width
+                areas = (bboxes[:, 3] - bboxes[:, 1]) * (
+                    bboxes[:, 2] - bboxes[:, 0])
+                scales = _get_adaptive_scales(areas.cpu().numpy())
+                for i, pos in enumerate(positions):
+                    self.draw_texts(
+                        texts[i],
+                        pos,
+                        colors='black',
+                        font_sizes=int(13 * scales[i]),
+                        bboxes=[{
+                            'facecolor': [c / 255 for c in colors[i]],
+                            'alpha': 0.8,
+                            'pad': 0.7,
+                            'edgecolor': 'none'
+                        }])
 
-		# draw masks
-		if 'masks' in instances:
-			masks = instances.masks
-			polygons = []
-			for i, mask in enumerate(masks):
-				contours, _ = bitmap_to_polygon(mask)
-				polygons.extend(contours)
-			self.draw_polygons(polygons, edge_colors='w', alpha=self.alpha)
-			self.draw_binary_masks(masks, colors=colors, alphas=self.alpha)
+        # draw masks
+        if 'masks' in instances:
+            masks = instances.masks
+            polygons = []
+            for i, mask in enumerate(masks):
+                contours, _ = bitmap_to_polygon(mask)
+                polygons.extend(contours)
+            self.draw_polygons(polygons, edge_colors='w', alpha=self.alpha)
+            self.draw_binary_masks(masks, colors=colors, alphas=self.alpha)
 
-		return self.get_image()
+        return self.get_image()
 
-	@master_only
-	def add_datasample(
-			self,
-			name: str,
-			image: np.ndarray,
-			data_sample: DetDataSample = None,
-			draw_gt: bool = True,
-			draw_pred: bool = True,
-			show: bool = False,
-			wait_time: int = 0,
-			# TODO: Supported in mmengine's Viusalizer.
-			out_file: Optional[str] = None,
-			pred_score_thr: float = 0.3,
-			step: int = 0) -> None:
-		"""Draw datasample and save to all backends.
+    @master_only
+    def add_datasample(
+            self,
+            name: str,
+            image: np.ndarray,
+            data_sample: DetDataSample = None,
+            draw_gt: bool = True,
+            draw_pred: bool = True,
+            show: bool = False,
+            wait_time: int = 0,
+            # TODO: Supported in mmengine's Viusalizer.
+            out_file: Optional[str] = None,
+            pred_score_thr: float = 0.3,
+            step: int = 0) -> None:
+        """Draw datasample and save to all backends.
 
-		- If GT and prediction are plotted at the same time, they are
-		displayed in a stitched image where the left image is the
-		ground truth and the right image is the prediction.
-		- If ``show`` is True, all storage backends are ignored, and
-		the images will be displayed in a local window.
-		- If ``out_file`` is specified, the drawn image will be
-		saved to ``out_file``. t is usually used when the display
-		is not available.
-		Args:
-			name (str): The image identifier.
-			image (np.ndarray): The image to draw.
-			data_sample (OptTrackSampleList): A data
-				sample that contain annotations and predictions.
-				Defaults to None.
-			draw_gt (bool): Whether to draw GT TrackDataSample.
-				Default to True.
-			draw_pred (bool): Whether to draw Prediction TrackDataSample.
-				Defaults to True.
-			show (bool): Whether to display the drawn image. Default to False.
-			wait_time (int): The interval of show (s). Defaults to 0.
-			out_file (str): Path to output file. Defaults to None.
-			pred_score_thr (float): The threshold to visualize the bboxes
-				and masks. Defaults to 0.3.
-			step (int): Global step value to record. Defaults to 0.
-		"""
-		gt_img_data = None
-		pred_img_data = None
+        - If GT and prediction are plotted at the same time, they are
+        displayed in a stitched image where the left image is the
+        ground truth and the right image is the prediction.
+        - If ``show`` is True, all storage backends are ignored, and
+        the images will be displayed in a local window.
+        - If ``out_file`` is specified, the drawn image will be
+        saved to ``out_file``. t is usually used when the display
+        is not available.
+        Args:
+            name (str): The image identifier.
+            image (np.ndarray): The image to draw.
+            data_sample (OptTrackSampleList): A data
+                sample that contain annotations and predictions.
+                Defaults to None.
+            draw_gt (bool): Whether to draw GT TrackDataSample.
+                Default to True.
+            draw_pred (bool): Whether to draw Prediction TrackDataSample.
+                Defaults to True.
+            show (bool): Whether to display the drawn image. Default to False.
+            wait_time (int): The interval of show (s). Defaults to 0.
+            out_file (str): Path to output file. Defaults to None.
+            pred_score_thr (float): The threshold to visualize the bboxes
+                and masks. Defaults to 0.3.
+            step (int): Global step value to record. Defaults to 0.
+        """
+        gt_img_data = None
+        pred_img_data = None
 
-		if data_sample is not None:
-			data_sample = data_sample.cpu()
+        if data_sample is not None:
+            data_sample = data_sample.cpu()
 
-		if draw_gt and data_sample is not None:
-			assert 'gt_instances' in data_sample
-			gt_img_data = self._draw_instances(image, data_sample.gt_instances)
+        if draw_gt and data_sample is not None:
+            assert 'gt_instances' in data_sample
+            gt_img_data = self._draw_instances(image, data_sample.gt_instances)
 
-		if draw_pred and data_sample is not None:
-			assert 'pred_track_instances' in data_sample
-			pred_instances = data_sample.pred_track_instances
-			if 'scores' in pred_instances:
-				pred_instances = pred_instances[
-					pred_instances.scores > pred_score_thr].cpu()
-			pred_img_data = self._draw_instances(image, pred_instances)
+        if draw_pred and data_sample is not None:
+            assert 'pred_track_instances' in data_sample
+            pred_instances = data_sample.pred_track_instances
+            if 'scores' in pred_instances:
+                pred_instances = pred_instances[
+                    pred_instances.scores > pred_score_thr].cpu()
+            pred_img_data = self._draw_instances(image, pred_instances)
 
-		if gt_img_data is not None and pred_img_data is not None:
-			drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
-		elif gt_img_data is not None:
-			drawn_img = gt_img_data
-		else:
-			drawn_img = pred_img_data
+        if gt_img_data is not None and pred_img_data is not None:
+            drawn_img = np.concatenate((gt_img_data, pred_img_data), axis=1)
+        elif gt_img_data is not None:
+            drawn_img = gt_img_data
+        else:
+            drawn_img = pred_img_data
 
-		if show:
-			self.show(drawn_img, win_name=name, wait_time=wait_time)
+        if show:
+            self.show(drawn_img, win_name=name, wait_time=wait_time)
 
-		if out_file is not None:
-			mmcv.imwrite(drawn_img[..., ::-1], out_file)
-		else:
-			self.add_image(name, drawn_img, step)
+        if out_file is not None:
+            mmcv.imwrite(drawn_img[..., ::-1], out_file)
+        else:
+            self.add_image(name, drawn_img, step)
